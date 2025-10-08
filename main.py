@@ -4,6 +4,8 @@ import sqlite3
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'expenses.db')
 
+mcp= FastMCP('Expnse Tracker')
+
 def initialize_db():
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
@@ -16,10 +18,16 @@ def initialize_db():
                 note TEXT DEFAULT ''
             )
         """)
-initialize_db()        
+initialize_db()
 
-mcp= FastMCP('Expnse Tracker')
-
+@mcp.tool()
+def add_expense(amount, category, date, subcategory='', note=''):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT INTO expenses (amount, category, date, subcategory, note)
+            VALUES (?, ?, ?, ?, ?)
+        """, (amount, category, date, subcategory, note))
+        return {"status":"ok", "id": conn.lastrowid}        
 
 if __name__ == "__main__":
     mcp.run()
