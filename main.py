@@ -27,7 +27,14 @@ def add_expense(amount, category, date, subcategory='', note=''):
             INSERT INTO expenses (amount, category, date, subcategory, note)
             VALUES (?, ?, ?, ?, ?)
         """, (amount, category, date, subcategory, note))
-        return {"status":"ok", "id": conn.lastrowid}        
+        return {"status":"ok", "id": conn.lastrowid}     
+
+@mcp.tool()    
+def list_expenses():
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute("SELECT id,date,amount,category,subcategory,note FROM expenses ORDER BY id ASC")
+        cols = [column[0] for column in cursor.description]
+        return [dict(zip(cols, row)) for row in cursor.fetchall()]     
 
 if __name__ == "__main__":
     mcp.run()
