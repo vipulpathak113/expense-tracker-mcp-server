@@ -1,4 +1,4 @@
-# Model Context Protocol (MCP) - In-Depth Explanation
+# Model Context Protocol (MCP)
 
 The **Model Context Protocol (MCP)** is a modern architectural approach designed to simplify and enhance the interaction between clients and servers in distributed systems. It focuses on providing a structured way to manage **models** (data), **contexts** (state or environment), and **protocols** (communication rules). Below is a detailed theoretical explanation of MCP, including its purpose, advantages, disadvantages, and use cases.
 
