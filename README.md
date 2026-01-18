@@ -48,6 +48,7 @@ MCP uses **JSON-RPC 2.0** for all communication.
     * **Transport Agnostic**: REST requires HTTP. JSON-RPC allows MCP to work over **Standard Input/Output (Stdio)** for local desktop apps *or* **HTTP/SSE** for remote servers.
     * **Stateful & Async**: JSON-RPC uses IDs (`id: 1`) to track requests. The client can send 10 requests at once without waiting for the first to finish, which is crucial for AI agents that "think" fast.
     * **Action-Oriented**: REST is resource-oriented. AI agents are action-oriented. RPC (Remote Procedure Call) fits this mental model perfectly.
+    * **Supports Batching**: Mutiple request can be sent in a batch and response will also be recieved in a batch accordingly.
 
  #### 📨 JSON-RPC Message Examples
 
