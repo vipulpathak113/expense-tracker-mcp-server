@@ -1,154 +1,189 @@
-# Model Context Protocol (MCP)
+---
 
-The **Model Context Protocol (MCP)** is a modern architectural approach designed to simplify and enhance the interaction between clients and servers in distributed systems. It focuses on providing a structured way to manage **models** (data), **contexts** (state or environment), and **protocols** (communication rules). Below is a detailed theoretical explanation of MCP, including its purpose, advantages, disadvantages, and use cases.
+## 📚 Table of Contents
+1. [What is MCP?](#what-is-mcp)
+2. [MCP Architecture & Layers (Deep Dive)](#mcp-architecture--layers-the-deep-dive)
+3. [Why is MCP Needed?](#why-is-mcp-needed)
+4. [Advantages of MCP](#advantages-of-mcp)
+5. [Disadvantages of MCP](#disadvantages-of-mcp)
+6. [Use Cases for MCP](#use-cases-for-mcp)
+7. [MCP vs. REST vs. GraphQL](#mcp-vs-rest-vs-graphql)
+8. [Best Practices](#best-practices-for-mcp)
+9. [Expense Tracker MCP Server (Project)](#expense-tracker-mcp-server)
+10. [Setup & Usage](#how-to-run-the-project)
+11. [Future Enhancements](#future-enhancements)
+12. [License](#license)
 
 ---
 
 ## What is MCP?
 
-MCP stands for **Model Context Protocol**, and it is a framework or protocol that emphasizes the following:
+The **Model Context Protocol (MCP)** is a modern architectural approach designed to simplify and enhance the interaction between clients and servers in distributed systems. It focuses on providing a structured way to manage **models** (data), **contexts** (state or environment), and **protocols** (communication rules). MCP is designed to provide a **tool-first API** approach, where the focus is on exposing tools (functions or commands) that operate on models within specific contexts.
 
-1. **Model**: Represents the data or entities being managed by the system. Models are typically structured and validated to ensure consistency.
-2. **Context**: Refers to the state or environment in which the models operate. Contexts can include user sessions, application states, or any runtime information that influences the behavior of the system.
-3. **Protocol**: Defines the rules and mechanisms for communication between different components of the system. This includes how data is exchanged, how tools (or commands) are executed, and how errors are handled.
+For more details, see the [MCP Overview](#model-context-protocol-mcp---in-depth-explanation).
 
-MCP is designed to provide a **tool-first API** approach, where the focus is on exposing tools (functions or commands) that operate on models within specific contexts, rather than relying on traditional resource-based APIs like REST.
+MCP stands for **Model Context Protocol**. It is a framework designed to standardize how AI agents and tools interact. It emphasizes:
+
+1. **Model**: The data entities being managed (e.g., database records).
+2. **Context**: The state or environment (e.g., user sessions, current date).
+3. **Protocol**: The rules of communication (JSON-RPC 2.0).
+
+MCP is designed to provide a **tool-first API** approach. Unlike REST, which exposes resources (`GET /users`), MCP exposes tools (`find_user`) that operate on models within specific contexts.
+
+---
+
+## MCP Architecture & Layers (The Deep Dive)
+
+To fully understand *how* MCP works, we must look at its layered architecture. This separates the application consuming the data (the Host) from the application providing the data (the Server).
+
+
+
+### 1. The Host Layer (The Client)
+This is the application "consuming" your API (e.g., Claude Desktop, Cursor IDE, or a custom frontend).
+* **Role**: It provides the User Interface. It does not know the business logic (e.g., how to calculate tax); it simply asks the Server, "What tools do you have?" and "Please execute this tool."
+
+### 2. The Protocol Layer (JSON-RPC 2.0)
+MCP uses **JSON-RPC 2.0** for all communication.
+* **Why JSON-RPC instead of REST?**
+    * **Transport Agnostic**: REST requires HTTP. JSON-RPC allows MCP to work over **Standard Input/Output (Stdio)** for local desktop apps *or* **HTTP/SSE** for remote servers.
+    * **Stateful & Async**: JSON-RPC uses IDs (`id: 1`) to track requests. The client can send 10 requests at once without waiting for the first to finish, which is crucial for AI agents that "think" fast.
+    * **Action-Oriented**: REST is resource-oriented. AI agents are action-oriented. RPC (Remote Procedure Call) fits this mental model perfectly.
+
+ #### 📨 JSON-RPC Message Examples
+
+**Request (Client -> Server):**
+The client asks to execute the `add_expense` tool. Note how the arguments are passed in the `params` object.
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "id": 1,
+  "params": {
+    "name": "add_expense",
+    "arguments": {
+      "amount": 50,
+      "category": "Food",
+      "note": "Lunch at cafe"
+    }
+  }
+}
+```
+***Response (Server -> Client): The server processes the logic and returns a structured result matching the ID 1.***
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Successfully added expense ID #42: $50 (Food)."
+      }
+    ]
+  }
+}
+```
+***Error Response (Server -> Client): If the input is invalid (e.g., missing amount), the server returns a standard error object.***
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "error": {
+    "code": -32602,
+    "message": "Invalid params: 'amount' is required."
+  }
+}
+```
+
+### 3. The Transport Layer
+This determines *how* the messages are sent.
+* **Stdio (Standard Input/Output)**:
+    * **Usage**: Local processes. The Host launches your `main.py` script directly.
+    * **Benefit**: Extremely fast, secure (no open network ports), and zero-configuration.
+* **SSE (Server-Sent Events) over HTTP**:
+    * **Usage**: Remote servers.
+    * **Benefit**: Allows the server to "push" updates (like a progress bar) to the client.
+
+### 4. The Server Application Layer
+This is where your code lives. In MCP, your logic is divided into three specific primitives:
+* **Resources (Passive Data)**: File-like data that clients can read (e.g., a list of expense categories).
+* **Tools (Active Actions)**: Functions that modify state (e.g., `add_expense`).
+* **Prompts (Templated Context)**: Reusable templates that help LLMs use your tools better.
 
 ---
 
 ## Why is MCP Needed?
 
-Traditional API paradigms like REST and GraphQL have served well for many use cases, but they come with limitations that MCP aims to address:
+Traditional API paradigms like REST and GraphQL have served well for web apps, but they have limitations for AI Agents:
 
 ### Limitations of Traditional APIs
-1. **Verbosity in REST**:
-   - REST APIs often require multiple endpoints to perform related operations, leading to increased complexity.
-   - Example: To fetch a user, update their profile, and retrieve their activity log, you might need three separate endpoints.
-
-2. **Over-fetching or Under-fetching in REST**:
-   - REST endpoints often return either too much or too little data, requiring additional requests or client-side filtering.
-
-3. **GraphQL Complexity**:
-   - While GraphQL solves some REST issues, it introduces complexity in query design and server-side schema management.
-   - It also lacks built-in mechanisms for handling commands or actions (e.g., "reset password").
-
-4. **State Management Challenges**:
-   - Traditional APIs do not inherently manage context (e.g., user sessions, runtime state), leaving developers to implement this manually.
+1. **Verbosity in REST**: Requires multiple endpoints to perform related operations.
+2. **Over/Under-fetching**: REST returns fixed data structures, often requiring client-side filtering.
+3. **State Management**: Traditional APIs don't inherently share "context" (like cursor position in an editor).
+4. **GraphQL Complexity**: Introduces complexity in query design and schema management.
 
 ### How MCP Solves These Issues
-1. **Tool-Centric Design**:
-   - MCP focuses on exposing tools (commands) that encapsulate specific operations, reducing the need for multiple endpoints.
-   - Example: A single tool can handle "fetch user data and update profile" in one call.
-
-2. **Context Awareness**:
-   - MCP integrates context into its design, allowing tools to operate based on the current state or environment.
-   - Example: A tool can behave differently for authenticated vs. unauthenticated users.
-
-3. **Structured Communication**:
-   - MCP enforces strict input/output validation using type systems, reducing errors and improving developer productivity.
-
-4. **Simplified Client Integration**:
-   - Clients interact with tools directly, without worrying about constructing complex queries or managing multiple endpoints.
+1. **Tool-Centric Design**: Exposes commands that encapsulate full operations.
+2. **Context Awareness**: Integrates runtime state directly into the request flow.
+3. **Structured Communication**: Enforces strict typing, preventing "hallucinated" parameters from AI models.
+4. **Simplified Integration**: Clients interact with tools directly without constructing complex queries.
 
 ---
 
 ## Advantages of MCP
 
-### 1. **Simplified API Design**
-- Tools are self-contained and focused, making APIs easier to design, document, and maintain.
-- No need to manage multiple endpoints for related operations.
-
-### 2. **Context-Aware Operations**
-- Tools can adapt their behavior based on the current context (e.g., user roles, session state).
-- This reduces the need for additional logic on the client side.
-
-### 3. **Type Safety**
-- MCP enforces strict type validation for inputs and outputs, reducing runtime errors.
-- Example: If a tool expects a `date` parameter, it will reject invalid formats before execution.
-
-### 4. **Improved Developer Experience**
-- Built-in tooling for documentation, testing, and debugging.
-- Developers can focus on implementing business logic rather than managing API infrastructure.
-
-### 5. **Flexibility**
-- MCP supports multiple transport layers (e.g., HTTP, WebSocket), making it suitable for both synchronous and asynchronous operations.
-
-### 6. **Reduced Overhead**
-- Clients can call tools directly without worrying about constructing complex queries or managing multiple endpoints.
+1. **Simplified API Design**: Tools are self-contained and single-purpose.
+2. **Context-Aware**: Adapts behavior based on user role or environment.
+3. **Type Safety**: Strict validation reduces runtime errors.
+4. **Developer Experience**: Built-in tooling for debugging and documentation.
+5. **Flexibility**: Works locally (Stdio) or remotely (HTTP/WebSocket).
+6. **Reduced Overhead**: Clients call tools directly without managing complex endpoints.
 
 ---
 
 ## Disadvantages of MCP
 
-### 1. **Learning Curve**
-- MCP introduces new concepts (tools, contexts, protocols) that may be unfamiliar to developers accustomed to REST or GraphQL.
-
-### 2. **Limited Ecosystem**
-- MCP is relatively new, so it may lack the extensive libraries, tools, and community support available for REST and GraphQL.
-
-### 3. **Overhead for Simple Use Cases**
-- For simple CRUD operations, MCP may introduce unnecessary complexity compared to REST.
-
-### 4. **State Management Complexity**
-- While MCP supports context-aware operations, managing complex contexts (e.g., multi-user sessions) can become challenging.
-
-### 5. **Performance Overhead**
-- MCP's strict type validation and context management can introduce slight performance overhead compared to lightweight REST APIs.
+1. **Learning Curve**: New concepts (Contexts, Prompts) compared to standard REST.
+2. **Limited Ecosystem**: Newer than REST/GraphQL, so fewer third-party libraries exist.
+3. **Overhead**: Can be overkill for simple CRUD apps.
+4. **Complexity**: Managing stateful contexts in multi-user environments can be difficult.
+5. **Performance**: Strict validation adds slight processing time.
 
 ---
 
 ## Use Cases for MCP
 
-### 1. **Complex Business Logic**
-- Applications with complex workflows (e.g., financial systems, expense trackers) benefit from MCP's tool-centric design.
-
-### 2. **Context-Dependent Operations**
-- Systems where operations depend on user roles, permissions, or runtime state (e.g., admin dashboards, multi-tenant applications).
-
-### 3. **Real-Time Applications**
-- MCP's support for WebSocket transport makes it ideal for real-time systems (e.g., chat applications, live dashboards).
-
-### 4. **Microservices**
-- MCP's structured communication and context management make it suitable for microservice architectures.
-
-### 5. **Developer-Focused APIs**
-- MCP is ideal for internal APIs where developer productivity and type safety are priorities.
+1. **Complex Business Logic**: Financial systems, expense trackers.
+2. **Context-Dependent Operations**: Admin dashboards, multi-tenant apps.
+3. **Real-Time Applications**: Chat apps, live dashboards.
+4. **Microservices**: Structured communication between internal services.
+5. **AI Integration**: The primary use case—connecting LLMs to your data securely.
 
 ---
 
 ## MCP vs. REST vs. GraphQL
 
-| Feature                | MCP                          | REST                         | GraphQL                     |
-|------------------------|------------------------------|------------------------------|-----------------------------|
-| **Design Paradigm**    | Tool-centric                | Resource-centric             | Query-centric               |
-| **Context Awareness**  | Built-in                    | Manual                      | Manual                      |
-| **Type Safety**        | Enforced                    | Optional                     | Optional                    |
-| **Real-Time Support**  | Built-in (WebSocket)        | Requires custom implementation | Built-in (subscriptions)   |
-| **Ease of Use**        | Moderate                    | Easy                         | Complex                     |
-| **Flexibility**        | High                        | Moderate                     | High                        |
-| **Ecosystem**          | Growing                     | Mature                       | Growing                     |
+| Feature | MCP | REST | GraphQL |
+| :--- | :--- | :--- | :--- |
+| **Design Paradigm** | Tool-centric | Resource-centric | Query-centric |
+| **Context Awareness** | Built-in | Manual | Manual |
+| **Type Safety** | Enforced | Optional | Optional |
+| **Real-Time Support** | Built-in (WebSocket/SSE) | Custom implementation | Built-in (subscriptions) |
+| **Ease of Use** | Moderate | Easy | Complex |
+| **Flexibility** | High | Moderate | High |
+| **Ecosystem** | Growing | Mature | Growing |
 
 ---
 
 ## Best Practices for MCP
 
-1. **Design Tools Carefully**:
-   - Keep tools focused and single-purpose.
-   - Use descriptive names and document inputs/outputs.
-
-2. **Leverage Context**:
-   - Use context to simplify client-side logic.
-   - Example: A tool can return different data for admins vs. regular users.
-
-3. **Validate Inputs and Outputs**:
-   - Use strict type validation to catch errors early.
-
-4. **Optimize Performance**:
-   - Use caching and batching to reduce latency.
-   - Avoid unnecessary context lookups.
-
-5. **Monitor and Debug**:
-   - Use built-in logging and debugging tools to monitor tool performance.
+1. **Design Tools Carefully**: Keep tools focused. Use descriptive names (LLMs rely on them).
+2. **Leverage Context**: Don't force the user to provide data you already have in context.
+3. **Validate Inputs**: Use schemas to catch errors before execution.
+4. **Optimize Performance**: Use caching where possible.
+5. **Monitor and Debug**: Use built-in logging tools.
 
 ---
 
@@ -291,14 +326,6 @@ GET /resources/categories
 
 4. **Multi-User Support**:
    - Enable multi-user functionality with separate expense tracking for each user.
-
----
-
-## About MCP
-
-The **Model Context Protocol (MCP)** is a modern architectural approach designed to simplify and enhance the interaction between clients and servers in distributed systems. It focuses on providing a structured way to manage **models** (data), **contexts** (state or environment), and **protocols** (communication rules). MCP is designed to provide a **tool-first API** approach, where the focus is on exposing tools (functions or commands) that operate on models within specific contexts.
-
-For more details, see the [MCP Overview](#model-context-protocol-mcp---in-depth-explanation).
 
 ---
 
