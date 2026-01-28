@@ -1,4 +1,5 @@
 from fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 import os
 import sqlite3
 
@@ -22,7 +23,7 @@ def initialize_db():
         """)
 initialize_db()
 
-@mcp.tool(_read_only=False)
+@mcp.tool(annotations=ToolAnnotations(readOnlyHint=False))
 def add_expense(amount, category, date, subcategory='', note=''):
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
