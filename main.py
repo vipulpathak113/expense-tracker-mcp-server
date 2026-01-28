@@ -22,7 +22,7 @@ def initialize_db():
         """)
 initialize_db()
 
-@mcp.tool()
+@mcp.tool(_read_only=False)
 def add_expense(amount, category, date, subcategory='', note=''):
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
